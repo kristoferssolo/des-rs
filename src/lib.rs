@@ -1,57 +1,83 @@
+mod constants;
+
+use crate::constants::PERMUTATION;
+
 #[derive(Debug)]
 pub struct DES {
     pub subkeys: [u64; 16],
-    _s_boxes: Vec<Vec<Vec<u8>>>,
 }
 
 impl DES {
+    /// Create a new DES instance from a 64-bit key (8 bytes).
     #[must_use]
     pub fn new(key: u64) -> Self {
-        let mut des = Self {
-            subkeys: [0; 16],
-            _s_boxes: Vec::new(),
-        };
+        let mut des = Self { subkeys: [0; 16] };
         des.generate_subkeys(key);
         des
     }
 
+    /// Encrypt a 64-bit block.
     #[must_use]
-    pub fn encrypt(&self, _plaintext: u64) -> u64 {
+    pub fn encrypt(&self, block: u64) -> u64 {
+        self.des(block, true)
+    }
+
+    /// Decrypt a 64-bit block.
+    #[must_use]
+    pub fn decrypt(&self, block: u64) -> u64 {
+        self.des(block, false)
+    }
+
+    #[must_use]
+    fn expand(&self, right_half: u32) -> u64 {
+        todo!()
+    }
+
+    /// Feistel function: Expand, XOR with subkey, S-box, permute.
+    #[must_use]
+    fn feistel(&self, right: u32, subkey: u64) -> u32 {
+        todo!()
+    }
+
+    /// Core DES function: encrypt if forward=true, else decrypt.
+    #[must_use]
+    fn des(&self, mut block: u64, forward: bool) -> u64 {
+        todo!()
+    }
+
+    /// Generate 16 subkeys from the 64-bit key.
+    fn generate_subkeys(&mut self, key: u64) {
+        todo!()
+    }
+
+    /// Helper functions for permutations (bit manipulation)
+    #[must_use]
+    fn permutate(&self, input: u32, table: &[u8], n: usize) -> u32 {
         todo!()
     }
 
     #[must_use]
-    pub fn decrypt(&self, _plaintext: u64) -> u64 {
+    fn ip(&self, input: u64) -> u64 {
         todo!()
     }
 
     #[must_use]
-    pub fn ip(&self, _input: u64) -> u64 {
+    pub fn fp(&self, input: u64) -> u64 {
         todo!()
     }
 
     #[must_use]
-    pub fn pc1(&self, _key: u64) -> u64 {
+    pub fn pc1(&self, input: u64) -> u64 {
         todo!()
     }
 
     #[must_use]
-    pub fn expand(&self, _right_half: u32) -> u64 {
+    pub fn pc2(&self, input: u64) -> u64 {
         todo!()
     }
 
-    #[must_use]
-    pub fn permutate_output(&self, _input: u32) -> u32 {
-        todo!()
-    }
-
-    #[must_use]
-    pub fn feistel(&self, _right: u32, _subkey: u64) -> u32 {
-        todo!()
-    }
-
-    fn generate_subkeys(&mut self, _key: u64) {
-        todo!()
+    fn permutate_output(&self, input: u32) -> u32 {
+        self.permutate(input, &PERMUTATION, 32)
     }
 }
 
@@ -69,7 +95,7 @@ impl DES {
 ///
 /// If data length is not multiple of 8 bytes
 #[must_use]
-pub fn encrypt_ecb(_data: &[u8], _key: &[u8; 8]) -> Vec<u8> {
+pub fn encrypt_ecb(data: &[u8], key: &[u8; 8]) -> Vec<u8> {
     todo!()
 }
 
@@ -87,12 +113,14 @@ pub fn encrypt_ecb(_data: &[u8], _key: &[u8; 8]) -> Vec<u8> {
 ///
 /// If data length is not multiple of 8 bytes
 #[must_use]
-pub fn decrypt_ecb(_data: &[u8], _key: &[u8; 8]) -> Vec<u8> {
+pub fn decrypt_ecb(data: &[u8], key: &[u8; 8]) -> Vec<u8> {
     todo!()
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::constants::S_BOXES;
+
     use super::*;
     use claims::assert_le;
     use rand::random;
@@ -104,7 +132,7 @@ mod tests {
     const TEST_CIPHERTEXT: u64 = 0x85E813540F0AB405;
 
     impl DES {
-        fn apply_sboxes(&self, _input: u64) -> u32 {
+        fn apply_sboxes(&self, input: u64) -> u32 {
             // Implementation for testing S-boxes in isolation
             // Return 32-bit result after 8 S-boxes
             todo!()
@@ -230,7 +258,6 @@ mod tests {
 
     #[test]
     fn sbox_subsitution() {
-        let des = des_instance();
         let sbox_tests = [
             // (box_idx, 6-bit input, expected 4-bit output)
             (0, 0b000000, 14), // S1: 00 0000 -> row 0, col 0 -> 14
@@ -242,7 +269,7 @@ mod tests {
         for (box_idx, input, expected) in sbox_tests {
             let row = (input & 1) | ((input >> 4) & 0x2);
             let col = (input >> 1) & 0xF;
-            let val = des._s_boxes[box_idx][row as usize][col as usize];
+            let val = S_BOXES[box_idx][row as usize][col as usize];
 
             assert_eq!(
                 val,
@@ -326,7 +353,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Invalid key size")]
     fn invalid_key_size() {
-        DES::new(0);
+        let _ = DES::new(0);
     }
 
     #[test]
@@ -336,7 +363,7 @@ mod tests {
 
         let start = Instant::now();
         for _ in 0..10000 {
-            des.encrypt(plaintext);
+            let _ = des.encrypt(plaintext);
         }
         let duration = start.elapsed();
 
