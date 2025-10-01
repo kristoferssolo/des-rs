@@ -55,7 +55,7 @@ impl Des {
         for (idx, &shift_num) in ROUND_ROTATIONS.iter().enumerate() {
             left = shift(left, shift_num);
             right = shift(right, shift_num);
-            let combined = (u64::from(right) << 28) | u64::from(left);
+            let combined = contatinate_keys(left, right);
             let subkey = pc2(combined);
             self.subkeys[idx] = subkey;
         }
@@ -95,10 +95,9 @@ pub fn pc1(key: u64) -> u64 {
         .fold(0, |mut acc, (idx, &pos)| {
             // pos is 1-based DES bit position (1-64, big-endian MSB first)
             let des_bit_1based = u64::from(pos);
-            let des_bit_0based = des_bit_1based.saturating_sub(1);
+            let des_bit_0based = des_bit_1based.saturating_sub(1); // 0-63
 
             // Map DES big-endian position to u64 little-endian position
-            // DES bit 1 (MSB) = u64 bit 63, DES bit 64 (LSB) = u64 bit 0
             let bit_pos = 63u64.saturating_sub(des_bit_0based);
 
             // Extract bit from u64 at the correct position
@@ -119,8 +118,16 @@ pub fn pc2(key: u64) -> u64 {
         .iter()
         .enumerate()
         .fold(0, |mut acc, (idx, &pos)| {
-            let bit_pos = u64::from(pos).saturating_sub(1);
-            let bit = ((key_56 >> bit_pos) & 1) << (47 - idx);
+            // pos is 1-based DES position in the 56-bit input (1-56)
+            let des_bit_1based = u64::from(pos);
+            let des_bit_0based = des_bit_1based.saturating_sub(1); // 0-55
+
+            // Map DES big-endian position to u64 little-endian position within 56 bits
+            let bit_pos = 55u64.saturating_sub(des_bit_0based);
+
+            // Extract bit from the 56-bit combined value
+            let bit = ((key_56 >> bit_pos) & 1) << (47usize.saturating_sub(idx));
+
             acc |= bit;
             acc
         })
@@ -158,6 +165,12 @@ const fn shift(key: u32, shift: u8) -> u32 {
     let main_shifted = (value << shift) & MASK;
     let wrapped_bits = (value >> (28 - shift)) & ((1 << shift) - 1);
     (main_shifted | wrapped_bits) & MASK
+}
+
+/// Concatinates two 28-bit numbers into 56-bit number
+#[must_use]
+fn contatinate_keys(left: u32, right: u32) -> u64 {
+    (u64::from(right) << 28) | u64::from(left)
 }
 
 /// Encrypts data using ECB mode.
@@ -312,8 +325,8 @@ mod tests {
 
     #[test]
     fn pc2_permutaion_correct() {
-        let combined = 0x04FE12506091CEu64; // [D₁ << 28] | C₁
-        let expected_subkey = 0xF3FDFBF373848CF5u64; // Expected 48-bit result
+        let combined = 0x00F0_CCAA_F556_678F; // [D_0 << 28] | C_0
+        let expected_subkey = 0x0000_CB3D_8B0E_17F5; // Expected 48-bit result
 
         let result = pc2(combined);
 
