@@ -1,6 +1,6 @@
 mod constants;
 
-use crate::constants::{IP, PC1_TABLE, PC2_TABLE, PERMUTATION, ROUND_ROTATIONS};
+use crate::constants::{IP, PC1_TABLE, PC2_TABLE, ROUND_ROTATIONS};
 
 #[derive(Debug)]
 pub struct Des {
@@ -27,44 +27,20 @@ impl Des {
         self.des(block, false)
     }
 
-    /// Expand the right side of the data from 32 bits to 48.
-    #[must_use]
-    fn expand(&self, right: u32) -> u64 {
-        let bytes = right.to_le_bytes();
-        dbg!(bytes);
-        0
-    }
-
-    /// Feistel function: Expand, XOR with subkey, S-box, permute.
-    #[must_use]
-    fn feistel(&self, right: u32, subkey: u64) -> u32 {
-        todo!()
-    }
-
     /// Core DES function: encrypt if forward=true, else decrypt.
     #[must_use]
-    fn des(&self, mut block: u64, forward: bool) -> u64 {
-        todo!()
-    }
+    fn des(&self, block: u64, forward: bool) -> u64 {
+        let permutated_block = ip(block);
 
-    /// Helper functions for permutations (bit manipulation)
-    #[must_use]
-    fn permutate(&self, input: u32, table: &[u8], n: usize) -> u32 {
-        todo!()
-    }
+        let (left, right) = if forward {
+            process_feistel_rounds(permutated_block, &self.subkeys)
+        } else {
+            let reversed_subkeys = self.subkeys.iter().rev().copied().collect::<Vec<_>>();
+            process_feistel_rounds(permutated_block, &reversed_subkeys)
+        };
 
-    #[must_use]
-    fn ip(&self, message: u64) -> u64 {
-        apply_permutaion(message, 64, 64, &IP)
-    }
-
-    #[must_use]
-    pub fn fp(&self, input: u64) -> u64 {
-        todo!()
-    }
-
-    fn permutate_output(&self, input: u32) -> u32 {
-        self.permutate(input, &PERMUTATION, 32)
+        let combined = concatenate_halves(right, left, 64);
+        fp(combined)
     }
 }
 
@@ -75,7 +51,7 @@ impl Des {
 /// versus Rust u64's little-endian bit numbering (0-63, LSB first).
 #[must_use]
 pub fn pc1(key: u64) -> u64 {
-    apply_permutaion(key, 64, 56, &PC1_TABLE)
+    permutate(key, 64, 56, &PC1_TABLE)
 }
 
 /// Compression permuation
@@ -83,12 +59,11 @@ pub fn pc1(key: u64) -> u64 {
 #[must_use]
 pub fn pc2(key: u64) -> u64 {
     let key_56 = key & 0x00FF_FFFF_FFFF_FFFF;
-
-    apply_permutaion(key_56, 56, 48, &PC2_TABLE)
+    permutate(key_56, 56, 48, &PC2_TABLE)
 }
 
 #[must_use]
-const fn split_key(key: u64) -> (u32, u32) {
+const fn split_block(key: u64) -> (u32, u32) {
     let is_56_bit = (key >> 56) == 0;
 
     if is_56_bit {
@@ -121,23 +96,23 @@ const fn shift(key: u32, shift: u8) -> u32 {
     (main_shifted | wrapped_bits) & MASK
 }
 
-/// Concatenates two 28-bit numbers into 56-bit number
+/// Concatenates two `input_bits`-bit numbers into 2*`input_bits`-bit number
 #[must_use]
-fn concatenate_keys(left: u32, right: u32) -> u64 {
-    (u64::from(left) << 28) | u64::from(right)
+fn concatenate_halves(left: u32, right: u32, input_bits: u32) -> u64 {
+    (u64::from(left) << input_bits) | u64::from(right)
 }
 
 /// Generate 16 subkeys from the 64-bit key.
 fn generate_subkeys(key: u64) -> [u64; 16] {
     let reduced_key = pc1(key); // C_0, D_0
-    let (mut left, mut right) = split_key(reduced_key);
+    let (mut left, mut right) = split_block(reduced_key);
 
     ROUND_ROTATIONS
         .iter()
         .map(|&shift_amount| {
             left = shift(left, shift_amount); // C_(n-1) -> C_n
             right = shift(right, shift_amount); // D_(n-1) -> D_n
-            let combined = concatenate_keys(left, right);
+            let combined = concatenate_halves(left, right, 28);
             pc2(combined)
         })
         .collect::<Vec<_>>()
@@ -153,7 +128,7 @@ fn generate_subkeys(key: u64) -> [u64; 16] {
 /// - `output_bits` - Number of bits in the output (1-64)
 /// - `position_table` - 1-based positions (1 to `input_bits`) where each output bit comes from
 #[must_use]
-fn apply_permutaion(input: u64, input_bits: u32, output_bits: u32, position_table: &[u8]) -> u64 {
+fn permutate(input: u64, input_bits: u32, output_bits: u32, position_table: &[u8]) -> u64 {
     position_table
         .iter()
         .enumerate()
@@ -177,40 +152,63 @@ fn apply_permutaion(input: u64, input_bits: u32, output_bits: u32, position_tabl
         })
 }
 
-/// Encrypts data using ECB mode.
-///
-/// # Arguments
-/// - `data` - Plaintext bytes (must be multiple of 8 for ECB)
-/// - `key` - 8-byte DES key
-///
-/// # Returns
-///
-/// Ciphertext as Vec<u8>, same length as input
-///
-/// # Panics
-///
-/// If data length is not multiple of 8 bytes
 #[must_use]
-pub fn encrypt_ecb(data: &[u8], key: &[u8; 8]) -> Vec<u8> {
+fn ip(message: u64) -> u64 {
+    permutate(message, 64, 64, &IP)
+}
+
+/// Expand the right side of the data from 32 bits to 48.
+#[must_use]
+fn expansion_permutation(right: u32) -> u64 {
+    let bytes = right.to_le_bytes();
+    dbg!(bytes);
+    0
+}
+
+#[must_use]
+fn s_box_permutation(input: u64) -> u32 {
+    // Implementation for testing S-boxes in isolation
+    // Return 32-bit result after 8 S-boxes
     todo!()
 }
 
-/// Decrypts ECB-encrypted data.
-///
-/// # Arguments
-/// - `data` - Plaintext bytes (must be multiple of 8 for ECB)
-/// - `key` - 8-byte DES key
-///
-/// # Returns
-///
-/// Ciphertext as Vec<u8>, same length as input
-///
-/// # Panics
-///
-/// If data length is not multiple of 8 bytes
 #[must_use]
-pub fn decrypt_ecb(data: &[u8], key: &[u8; 8]) -> Vec<u8> {
+fn p_box_permutation(input: u32) -> u32 {
     todo!()
+}
+
+#[must_use]
+pub fn fp(input: u64) -> u64 {
+    todo!()
+}
+
+/// Process 16 Feistel rounds for ECB encryption/decryption.
+#[must_use]
+fn process_feistel_rounds(initial_block: u64, subkeys: &[u64]) -> (u32, u32) {
+    let (mut left, mut right) = split_block(initial_block);
+    for &subkey in subkeys {
+        (left, right) = feistel(left, right, subkey);
+    }
+
+    (right, left) // left and right should be swapped
+}
+
+/// Feistel function: Expand, XOR with subkey, S-box, permute.
+/// `R_i` = `L_(i-1)` XOR f(`R_(i-1)`, `K_1`)
+#[must_use]
+fn feistel(left: u32, right: u32, subkey: u64) -> (u32, u32) {
+    let function_output = f_function(right, subkey);
+    let new_right = left ^ function_output;
+    // L_i = R_(i-1)
+    let new_left = right;
+    (new_right, new_left)
+}
+
+fn f_function(right: u32, subkey: u64) -> u32 {
+    let expanded = expansion_permutation(right);
+    let xored = expanded ^ subkey;
+    let sboxed = s_box_permutation(xored);
+    p_box_permutation(sboxed)
 }
 
 #[cfg(test)]
@@ -218,9 +216,7 @@ mod tests {
     use super::*;
     use crate::constants::S_BOXES;
     use claims::{assert_ge, assert_le};
-    use rand::random;
     use rstest::rstest;
-    use std::time::Instant;
 
     const TEST_KEY: u64 = 0x1334_5779_9BBC_DFF1;
 
@@ -232,65 +228,10 @@ mod tests {
     const TEST_COMBINED_KEY: u64 = 0x00F0_CCAA_F556_678F; // From calculator after re-combination
     const TEST_PC2_RESULT: u64 = 0x0000_CB3D_8B0E_17F5; // From calculator after PC-2
 
-    impl Des {
-        fn apply_sboxes(&self, input: u64) -> u32 {
-            // Implementation for testing S-boxes in isolation
-            // Return 32-bit result after 8 S-boxes
-            todo!()
-        }
-    }
-
-    /// Helper to create a test Des instance (use your actual key schedule)
-    fn des_instance() -> Des {
-        Des::new(TEST_KEY)
-    }
-
-    // #[test]
-    fn encrypt_decrypt_roundtrip() {
-        let des = des_instance();
-        let plaintext = TEST_PLAINTEXT;
-        let ciphertext = des.encrypt(plaintext);
-        let dectrypted = des.decrypt(plaintext);
-        let re_ciphertext = des.encrypt(dectrypted);
-
-        assert_eq!(ciphertext, TEST_CIPHERTEXT, "Encyption failed");
-        assert_eq!(re_ciphertext, TEST_CIPHERTEXT, "Re-Encyption failed");
-    }
-
-    // #[test]
-    fn weak_keys_rejected() {
-        let weak_keys = [0x0101010101010101, 0xFEFEFEFEFEFEFEFE, 0xE001E001E001E001];
-
-        for key in weak_keys {
-            let des = Des::new(key);
-            let plaintext = TEST_PLAINTEXT;
-            let encrypted = des.encrypt(plaintext);
-            let dectrypted = des.decrypt(encrypted);
-            assert_eq!(dectrypted, plaintext, "Weak key {key} failed roundtrip");
-        }
-    }
-
-    // #[test]
-    fn multiple_blocks() {
-        let des = des_instance();
-        let blocks = [
-            (0x0123456789ABCDEFu64, 0x85E813540F0AB405u64),
-            (0xFEDCBA9876543210u64, 0xC08BF0FF627D3E6Fu64), // Another test vector
-            (0x0000000000000000u64, 0x474D5E3B6F8A07F8u64), // Zero block
-        ];
-        for (plaintext, expected) in blocks {
-            let encrypted = des.encrypt(plaintext);
-            assert_eq!(encrypted, expected, "Failed on plaintext: {plaintext:016X}");
-
-            let dectrypted = des.decrypt(encrypted);
-            assert_eq!(dectrypted, plaintext, "Roundtrip failed on block");
-        }
-    }
-
     #[test]
     fn initial_permutation() {
         let expected_ip = 0xCC00_CCFF_F0AA_F0AA;
-        let result = des_instance().ip(TEST_PLAINTEXT);
+        let result = ip(TEST_PLAINTEXT);
         assert_eq!(
             result, expected_ip,
             "Initial permulation failed {result:016X} != {expected_ip:016X}"
@@ -340,7 +281,7 @@ mod tests {
 
     #[test]
     fn split_key_56_bits() {
-        let (left, right) = split_key(TEST_PC1_RESULT);
+        let (left, right) = split_block(TEST_PC1_RESULT);
 
         assert_eq!(left, 0x0F0C_CAAF, "split_key left half mismatch",);
         assert_eq!(right, 0x0556_678F, "split_key right half mismatch",);
@@ -356,6 +297,15 @@ mod tests {
             4,
             "Right should be 28-bit value in u32"
         );
+    }
+
+    #[test]
+    fn split_key_64_bits() {
+        let text = ip(TEST_PLAINTEXT);
+        let (left, right) = split_block(text);
+
+        assert_eq!(left, 0x0CC0_0CCFF, "split_key left half mismatch",);
+        assert_eq!(right, 0x0F0A_AF0AA, "split_key right half mismatch",);
     }
 
     #[rstest]
@@ -429,8 +379,8 @@ mod tests {
     #[case(0x0FE1_9955, 0x0EAA_CCF1, 0x00FE_1995_5EAA_CCF1)] // CD_14
     #[case(0x0F86_6557, 0x0AAB_33C7, 0x00F8_6655_7AAB_33C7)] // CD_15
     #[case(0x0F0C_CAAF, 0x0556_678F, 0x00F0_CCAA_F556_678F)] // CD_16
-    fn key_concatenation(#[case] left: u32, #[case] right: u32, #[case] combined: u64) {
-        let result = concatenate_keys(left, right);
+    fn concatenation(#[case] left: u32, #[case] right: u32, #[case] combined: u64) {
+        let result = concatenate_halves(left, right, 28);
 
         assert_eq!(result, combined, "{result:016X} != {combined:016X}");
 
@@ -448,11 +398,10 @@ mod tests {
         assert_eq!(result >> 56, 0, "Combined should fit in 56 bits");
     }
 
-    // #[test]
-    fn expansion_permutation() {
-        let des = des_instance();
+    #[test]
+    fn permutation_expansion() {
         let right_half = RIGHT_KEY;
-        let expanded = des.expand(right_half);
+        let expanded = expansion_permutation(right_half);
 
         // Expansion should produce 48 bits from 32
         assert_eq!(expanded >> 48, 0, "Expandsion exceeds 48 bits");
@@ -478,7 +427,7 @@ mod tests {
         );
     }
 
-    // #[test]
+    #[test]
     fn sbox_subsitution() {
         let sbox_tests = [
             // (box_idx, 6-bit input, expected 4-bit output)
@@ -502,11 +451,10 @@ mod tests {
         }
     }
 
-    // #[test]
+    #[test]
     fn permuation_pbox() {
-        let des = des_instance();
         let input = RIGHT_KEY;
-        let result = des.permutate_output(input);
+        let result = p_box_permutation(input);
 
         // P-box should preserve all bits (32 in, 32 out), just reorder
         let bit_count = input.count_ones();
@@ -517,104 +465,5 @@ mod tests {
         let input_bit_15 = (input >> 15) & 1;
         let output_bit_0 = (result >> 31) & 1; // MSB first
         assert_eq!(input_bit_15, output_bit_0, "P-box bit mapping failed");
-    }
-
-    // #[test]
-    fn feistel_function_properties() {
-        let des = des_instance();
-        let right = RIGHT_KEY;
-        let subkey = 0xFEDCBA9876543210 & 0xFFFF_FFFF_FFFF;
-
-        let feistel_result = des.feistel(right, subkey);
-
-        // Feistel output should always be 32 bits
-        assert_le!(feistel_result, u32::MAX, "Feistel output exceeds 32 bits");
-
-        // Test that zero subkey produces deterministic result
-        let zero_subkey_result = des.feistel(right, 0);
-        let zero_expanded = des.expand(right);
-        let sbox_result = des.apply_sboxes(zero_expanded);
-        let expected = des.permutate_output(sbox_result as u32);
-        assert_eq!(zero_subkey_result, expected, "Feistel with zero key failed");
-    }
-
-    // #[test]
-    fn all_zero_paintext() {
-        let des = des_instance();
-
-        let plain = 0;
-        let encrypted = des.encrypt(plain);
-        let decrypted = des.decrypt(encrypted);
-        assert_eq!(decrypted, plain, "All-zero plaintext failed");
-    }
-
-    // #[test]
-    fn all_one_paintext() {
-        let des = des_instance();
-
-        let plain = 1;
-        let encrypted = des.encrypt(plain);
-        let decrypted = des.decrypt(encrypted);
-        assert_eq!(decrypted, plain, "All-one plaintext failed");
-    }
-
-    // #[test]
-    fn different_inputs() {
-        let des = des_instance();
-
-        let plain1 = 0x0000000000000001;
-        let plain2 = 0x0000000000000002;
-        let enc1 = des.encrypt(plain1);
-        let enc2 = des.encrypt(plain2);
-        assert_ne!(
-            enc1, enc2,
-            "Encryption not deterministic for different inputs"
-        );
-    }
-
-    // #[test]
-    #[should_panic(expected = "Invalid key size")]
-    fn invalid_key_size() {
-        let _ = Des::new(0);
-    }
-
-    // #[test]
-    fn performance() {
-        let des = des_instance();
-        let plaintext = TEST_PLAINTEXT;
-
-        let start = Instant::now();
-        for _ in 0..10000 {
-            let _ = des.encrypt(plaintext);
-        }
-        let duration = start.elapsed();
-
-        println!("10k encryption took: {duration:?}");
-        // Reasonable benchmark: should be under 1ms on modern hardware
-        assert!(duration.as_millis() < 100, "Performance degraded");
-    }
-
-    // #[test]
-    fn fuzz_properties() {
-        let des = des_instance();
-
-        for _ in 0..100 {
-            let plaintext = random();
-            let encrypted = des.encrypt(plaintext);
-            let decrypted = des.decrypt(plaintext);
-
-            assert_eq!(decrypted, encrypted, "Fuzz roundtrip failed");
-            assert_ne!(encrypted, plaintext, "Encryption is identity function");
-
-            let key2 = random();
-            if key2 != TEST_KEY {
-                let des2 = Des::new(key2);
-                let encrypted2 = des2.encrypt(plaintext);
-                assert_ne!(
-                    encrypted, encrypted2,
-                    "Different keys produced same encryption"
-                );
-            }
-        }
     }
 }
