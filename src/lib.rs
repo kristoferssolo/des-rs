@@ -1,6 +1,6 @@
 mod constants;
 
-use crate::constants::{PC1_TABLE, PC2_TABLE, PERMUTATION, ROUND_ROTATIONS};
+use crate::constants::{IP, PC1_TABLE, PC2_TABLE, PERMUTATION, ROUND_ROTATIONS};
 
 #[derive(Debug)]
 pub struct Des {
@@ -54,8 +54,8 @@ impl Des {
     }
 
     #[must_use]
-    fn ip(&self, input: u64) -> u64 {
-        todo!()
+    fn ip(&self, message: u64) -> u64 {
+        apply_permutaion(message, 64, 64, &IP)
     }
 
     #[must_use]
@@ -75,23 +75,7 @@ impl Des {
 /// versus Rust u64's little-endian bit numbering (0-63, LSB first).
 #[must_use]
 pub fn pc1(key: u64) -> u64 {
-    PC1_TABLE
-        .iter()
-        .enumerate()
-        .fold(0, |mut acc, (idx, &pos)| {
-            // pos is 1-based DES bit position (1-64, big-endian MSB first)
-            let des_bit_1based = u64::from(pos);
-            let des_bit_0based = des_bit_1based.saturating_sub(1); // 0-63
-
-            // Map DES big-endian position to u64 little-endian position
-            let bit_pos = 63u64.saturating_sub(des_bit_0based);
-
-            // Extract bit from u64 at the correct position
-            let bit = ((key >> bit_pos) & 1) << (55usize.saturating_sub(idx));
-
-            acc |= bit;
-            acc
-        })
+    apply_permutaion(key, 64, 56, &PC1_TABLE)
 }
 
 /// Compression permuation
@@ -100,23 +84,7 @@ pub fn pc1(key: u64) -> u64 {
 pub fn pc2(key: u64) -> u64 {
     let key_56 = key & 0x00FF_FFFF_FFFF_FFFF;
 
-    PC2_TABLE
-        .iter()
-        .enumerate()
-        .fold(0, |mut acc, (idx, &pos)| {
-            // pos is 1-based DES position in the 56-bit input (1-56)
-            let des_bit_1based = u64::from(pos);
-            let des_bit_0based = des_bit_1based.saturating_sub(1); // 0-55
-
-            // Map DES big-endian position to u64 little-endian position within 56 bits
-            let bit_pos = 55u64.saturating_sub(des_bit_0based);
-
-            // Extract bit from the 56-bit combined value
-            let bit = ((key_56 >> bit_pos) & 1) << (47usize.saturating_sub(idx));
-
-            acc |= bit;
-            acc
-        })
+    apply_permutaion(key_56, 56, 48, &PC2_TABLE)
 }
 
 #[must_use]
@@ -175,6 +143,38 @@ fn generate_subkeys(key: u64) -> [u64; 16] {
         .collect::<Vec<_>>()
         .try_into()
         .expect("Exactly 16 subkeys expected")
+}
+
+/// Generic bit permutation for arbitrary input/output sizes.
+///
+/// # Arguments
+/// - `input` - The input value (treated as a bitfield of `input_bits` size)
+/// - `input_bits` - Number of meaningful bits in the input (1-64)
+/// - `output_bits` - Number of bits in the output (1-64)
+/// - `position_table` - 1-based positions (1 to `input_bits`) where each output bit comes from
+#[must_use]
+fn apply_permutaion(input: u64, input_bits: u32, output_bits: u32, position_table: &[u8]) -> u64 {
+    position_table
+        .iter()
+        .enumerate()
+        .fold(0, |acc, (idx, &pos)| {
+            // Convert 1-based DES position to 0-based input position (MSB first)
+            let pos_0based = u64::from(pos.saturating_sub(1));
+            let input_bit_pos = u64::from(input_bits)
+                .saturating_sub(1)
+                .saturating_sub(pos_0based);
+
+            // Extract bit from input
+            let bit_value = (input >> input_bit_pos) & 1;
+
+            // Extract bit from u64 at the correct position
+            let output_bit_pos = u64::from(output_bits)
+                .saturating_sub(1)
+                .saturating_sub(idx as u64);
+            let shifted_bit = bit_value << output_bit_pos;
+
+            acc | shifted_bit
+        })
 }
 
 /// Encrypts data using ECB mode.
@@ -287,11 +287,14 @@ mod tests {
         }
     }
 
-    // #[test]
+    #[test]
     fn initial_permutation() {
-        let expected_ip = 0xC2B093C7A3A7C24A;
-        let result = des_instance().ip(TEST_KEY);
-        assert_eq!(result, expected_ip, "Initial permulation failed");
+        let expected_ip = 0xCC00_CCFF_F0AA_F0AA;
+        let result = des_instance().ip(TEST_PLAINTEXT);
+        assert_eq!(
+            result, expected_ip,
+            "Initial permulation failed {result:016X} != {expected_ip:016X}"
+        );
     }
 
     #[test]
