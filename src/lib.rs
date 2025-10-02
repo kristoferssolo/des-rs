@@ -1,6 +1,6 @@
 mod constants;
 
-use crate::constants::{EXPANSION_TABLE, IP, PC1_TABLE, PC2_TABLE, ROUND_ROTATIONS};
+use crate::constants::{E_BOX, IP, PC1_TABLE, PC2_TABLE, ROUND_ROTATIONS, S_BOXES};
 
 #[derive(Debug)]
 pub struct Des {
@@ -160,14 +160,25 @@ fn ip(message: u64) -> u64 {
 /// Expand the right side of the data from 32 bits to 48.
 #[must_use]
 fn expansion_permutation(right: u32) -> u64 {
-    permutate(u64::from(right), 32, 48, &EXPANSION_TABLE)
+    permutate(u64::from(right), 32, 48, &E_BOX)
 }
 
+/// Implementation for testing S-boxes in isolation.
+/// Applies all 8 DES S-boxes to a 48-bit input, returning 32-bit result.
 #[must_use]
-fn s_box_permutation(input: u64) -> u32 {
-    // Implementation for testing S-boxes in isolation
-    // Return 32-bit result after 8 S-boxes
-    todo!()
+fn s_box_substitution(block: u64) -> u32 {
+    S_BOXES.iter().enumerate().fold(0, |acc, (idx, s_box)| {
+        let start_bit = 42 - idx * 6; // 42 = 48 - 6
+        let shift_amount = (7 - idx) * 4;
+
+        let mask = 63 << start_bit; // 63 == 0b11_111
+        let sbox_bits = u8::try_from((block & mask) >> start_bit).expect("8-bit value");
+
+        let row = (sbox_bits >> 5) << 1 | (sbox_bits & 1);
+        let col = (sbox_bits >> 1) & 15; // 15 == 0b1111
+        let sbox_value = s_box[row as usize][col as usize];
+        acc | (u32::from(sbox_value) << shift_amount)
+    })
 }
 
 #[must_use]
@@ -205,7 +216,7 @@ fn feistel(left: u32, right: u32, subkey: u64) -> (u32, u32) {
 fn f_function(right: u32, subkey: u64) -> u32 {
     let expanded = expansion_permutation(right);
     let xored = expanded ^ subkey;
-    let sboxed = s_box_permutation(xored);
+    let sboxed = s_box_substitution(xored);
     p_box_permutation(sboxed)
 }
 
@@ -422,28 +433,26 @@ mod tests {
         assert_eq!(expanded >> 48, 0, "Expansion exceeds 48 bits");
     }
 
-    // #[test]
-    fn sbox_subsitution() {
-        let sbox_tests = [
-            // (box_idx, 6-bit input, expected 4-bit output)
-            (0, 0b000000, 14), // S1: 00 0000 -> row 0, col 0 -> 14
-            (0, 0b011111, 9),  // S1: 01 1111 -> row 1, col 15 -> 9
-            (1, 0b100000, 0),  // S2: 10 0000 -> row 2, col 0 -> 0
-            (2, 0b001010, 2),  // S3: 00 1010 -> row 0, col 10 -> 2
-        ];
-
-        for (box_idx, input, expected) in sbox_tests {
-            let row = (input & 1) | ((input >> 4) & 0x2);
-            let col = (input >> 1) & 0xF;
-            let val = S_BOXES[box_idx][row as usize][col as usize];
-
-            assert_eq!(
-                val,
-                expected as u8,
-                "S{} failed: input {input:06b} (row {row}, col {col}) expected {expected}, got {val}",
-                box_idx + 1
-            );
-        }
+    #[rstest]
+    #[case(0x6117_BA86_6527, 0x5C82_B597)] // Round 1
+    #[case(0x0C44_8DEB_63EC, 0xF8D0_3AAE)] // Round 2
+    #[case(0xB07C_88F8_27CA, 0x2710_E16F)] // Round 3
+    #[case(0x22EF_2EDE_4AB4, 0x21ED_9F3A)] // Round 4
+    #[case(0xC605_03EB_51A2, 0x50C8_31EB)] // Round 5
+    #[case(0xA6E7_6180_BA80, 0x41F3_4C3D)] // Round 6
+    #[case(0x19AF_B813_B3EF, 0x1075_40AD)] // Round 7
+    #[case(0xF748_6F9E_7B5B, 0x6C18_7CAE)] // Round 8
+    #[case(0x8A70_B948_9B20, 0x110C_5777)] // Round 9
+    #[case(0xA170_BEDA_85BB, 0xDA04_5275)] // Round 10
+    #[case(0x7BA1_7834_2E23, 0x7305_D101)] // Round 11
+    #[case(0x15DA_058B_E418, 0x7B8B_2635)] // Round 12
+    #[case(0xAD78_2B75_B8B1, 0x9AD1_8B4F)] // Round 13
+    #[case(0x5055_B178_4DCE, 0x6479_9AF1)] // Round 14
+    #[case(0x5FC5_D477_FF51, 0xB2E8_8D3C)] // Round 15
+    #[case(0xEB57_8F14_565D, 0xA783_2429)] // Round 16
+    fn sbox_subsitution(#[case] block: u64, #[case] output: u32) {
+        let result = s_box_substitution(block);
+        assert_eq!(result, output, "Expected {output:08X}, got {result:08X}");
     }
 
     // #[test]
