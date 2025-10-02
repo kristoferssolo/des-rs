@@ -1,6 +1,6 @@
 mod constants;
 
-use crate::constants::{E_BOX, IP, PC1_TABLE, PC2_TABLE, ROUND_ROTATIONS, S_BOXES};
+use crate::constants::{E_BOX, IP, PC1_TABLE, PC2_TABLE, P_BOX, ROUND_ROTATIONS, S_BOXES};
 
 #[derive(Debug)]
 pub struct Des {
@@ -183,7 +183,7 @@ fn s_box_substitution(block: u64) -> u32 {
 
 #[must_use]
 fn p_box_permutation(input: u32) -> u32 {
-    todo!()
+    u32::try_from(permutate(u64::from(input), 32, 32, &P_BOX)).expect("32-bit value")
 }
 
 #[must_use]
@@ -201,7 +201,6 @@ fn process_feistel_rounds(initial_block: u64, subkeys: &[u64]) -> (u32, u32) {
 
     (right, left) // left and right should be swapped
 }
-
 /// Feistel function: Expand, XOR with subkey, S-box, permute.
 /// `R_i` = `L_(i-1)` XOR f(`R_(i-1)`, `K_1`)
 #[must_use]
@@ -455,19 +454,25 @@ mod tests {
         assert_eq!(result, output, "Expected {output:08X}, got {result:08X}");
     }
 
-    // #[test]
-    fn permuation_pbox() {
-        let input = 0x0;
-        let result = p_box_permutation(input);
-
-        // P-box should preserve all bits (32 in, 32 out), just reorder
-        let bit_count = input.count_ones();
-        let result_bit_count = result.count_ones();
-        assert_eq!(bit_count, result_bit_count, "P-box changes bit count");
-
-        // Test specific bit mapping: PERMUTATION[0]=16 means bit 15 (0-based) of output = bit 15 of input
-        let input_bit_15 = (input >> 15) & 1;
-        let output_bit_0 = (result >> 31) & 1; // MSB first
-        assert_eq!(input_bit_15, output_bit_0, "P-box bit mapping failed");
+    #[rstest]
+    #[case(0x5C82_B597, 0x234A_A9BB)] // Round 1
+    #[case(0xF8D0_3AAE, 0x3CAB_87A3)] // Round 2
+    #[case(0x2710_E16F, 0x4D16_6EB0)] // Round 3
+    #[case(0x21ED_9F3A, 0xBB23_774C)] // Round 4
+    #[case(0x50C8_31EB, 0x2813_ADC3)] // Round 5
+    #[case(0x41F3_4C3D, 0x9E45_CD2C)] // Round 6
+    #[case(0x1075_40AD, 0x8C05_1C27)] // Round 7
+    #[case(0x6C18_7CAE, 0x3C0E_86F9)] // Round 8
+    #[case(0x110C_5777, 0x2236_7C6A)] // Round 9
+    #[case(0xDA04_5275, 0x62BC_9C22)] // Round 10
+    #[case(0x7305_D101, 0xE104_FA02)] // Round 11
+    #[case(0x7B8B_2635, 0xC268_CFEA)] // Round 12
+    #[case(0x9AD1_8B4F, 0xDDBB_2922)] // Round 13
+    #[case(0x6479_9AF1, 0xB731_8E55)] // Round 14
+    #[case(0xB2E8_8D3C, 0x5B81_276E)] // Round 15
+    #[case(0xA783_2429, 0xC8C0_4F98)] // Round 16
+    fn permuation_pbox(#[case] block: u32, #[case] output: u32) {
+        let result = p_box_permutation(block);
+        assert_eq!(result, output, "Expected {output:08X}, got {result:08X}");
     }
 }
