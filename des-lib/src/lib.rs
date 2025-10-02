@@ -1,6 +1,6 @@
 mod constants;
 
-use crate::constants::{E_BOX, IP, PC1_TABLE, PC2_TABLE, P_BOX, ROUND_ROTATIONS, S_BOXES};
+use crate::constants::{E_BOX, FP, IP, PC1_TABLE, PC2_TABLE, P_BOX, ROUND_ROTATIONS, S_BOXES};
 
 #[derive(Debug)]
 pub struct Des {
@@ -39,7 +39,7 @@ impl Des {
             process_feistel_rounds(permutated_block, &reversed_subkeys)
         };
 
-        let combined = concatenate_halves(right, left, 64);
+        let combined = concatenate_halves(right, left, 32);
         fp(combined)
     }
 }
@@ -97,9 +97,10 @@ const fn shift(key: u32, shift: u8) -> u32 {
 }
 
 /// Concatenates two `input_bits`-bit numbers into 2*`input_bits`-bit number
+#[inline]
 #[must_use]
-fn concatenate_halves(left: u32, right: u32, input_bits: u32) -> u64 {
-    (u64::from(left) << input_bits) | u64::from(right)
+fn concatenate_halves(left: u32, right: u32, bit_offset: u8) -> u64 {
+    (u64::from(left) << bit_offset) | u64::from(right)
 }
 
 /// Generate 16 subkeys from the 64-bit key.
@@ -152,12 +153,14 @@ fn permutate(input: u64, input_bits: u32, output_bits: u32, position_table: &[u8
         })
 }
 
+#[inline]
 #[must_use]
 fn ip(message: u64) -> u64 {
     permutate(message, 64, 64, &IP)
 }
 
 /// Expand the right side of the data from 32 bits to 48.
+#[inline]
 #[must_use]
 fn expansion_permutation(right: u32) -> u64 {
     permutate(u64::from(right), 32, 48, &E_BOX)
@@ -181,14 +184,16 @@ fn s_box_substitution(block: u64) -> u32 {
     })
 }
 
+#[inline]
 #[must_use]
 fn p_box_permutation(input: u32) -> u32 {
     u32::try_from(permutate(u64::from(input), 32, 32, &P_BOX)).expect("32-bit value")
 }
 
+#[inline]
 #[must_use]
-pub fn fp(input: u64) -> u64 {
-    todo!()
+pub fn fp(block: u64) -> u64 {
+    permutate(block, 64, 64, &FP)
 }
 
 /// Process 16 Feistel rounds for ECB encryption/decryption.
@@ -199,7 +204,7 @@ fn process_feistel_rounds(initial_block: u64, subkeys: &[u64]) -> (u32, u32) {
         (left, right) = feistel(left, right, subkey);
     }
 
-    (right, left) // left and right should be swapped
+    (left, right)
 }
 /// Feistel function: Expand, XOR with subkey, S-box, permute.
 /// `R_i` = `L_(i-1)` XOR f(`R_(i-1)`, `K_1`)
@@ -209,9 +214,10 @@ fn feistel(left: u32, right: u32, subkey: u64) -> (u32, u32) {
     let new_right = left ^ function_output;
     // L_i = R_(i-1)
     let new_left = right;
-    (new_right, new_left)
+    (new_left, new_right)
 }
 
+#[must_use]
 fn f_function(right: u32, subkey: u64) -> u32 {
     let expanded = expansion_permutation(right);
     let xored = expanded ^ subkey;
@@ -222,26 +228,27 @@ fn f_function(right: u32, subkey: u64) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::constants::S_BOXES;
-    use claims::{assert_ge, assert_le};
+    use claims::assert_ge;
     use rstest::rstest;
 
     const TEST_KEY: u64 = 0x1334_5779_9BBC_DFF1;
-
     const TEST_PLAINTEXT: u64 = 0x0123_4567_89AB_CDEF;
     const TEST_CIPHERTEXT: u64 = 0x85E8_1354_0F0A_B405;
 
     const TEST_PC1_RESULT: u64 = 0x00F0_CCAA_F556_678F; // From calculator after PC-1
-    const TEST_COMBINED_KEY: u64 = 0x00F0_CCAA_F556_678F; // From calculator after re-combination
-    const TEST_PC2_RESULT: u64 = 0x0000_CB3D_8B0E_17F5; // From calculator after PC-2
 
-    #[test]
-    fn initial_permutation() {
-        let expected_ip = 0xCC00_CCFF_F0AA_F0AA;
-        let result = ip(TEST_PLAINTEXT);
+    /// Helper to create a test Des instance (use your actual key schedule)
+    fn des_instance() -> Des {
+        Des::new(TEST_KEY)
+    }
+
+    #[rstest]
+    #[case(TEST_PLAINTEXT, 0xCC00_CCFF_F0AA_F0AA)]
+    fn initial_permutation(#[case] input: u64, #[case] output: u64) {
+        let result = ip(input);
         assert_eq!(
-            result, expected_ip,
-            "Initial permulation failed expected 0x{expected_ip:016X}, got 0x{result:016X}"
+            result, output,
+            "Initial permutation failed. Expected 0x{output:016X}, got 0x{result:016X}"
         );
     }
 
@@ -474,5 +481,37 @@ mod tests {
     fn permuation_pbox(#[case] block: u32, #[case] output: u32) {
         let result = p_box_permutation(block);
         assert_eq!(result, output, "Expected {output:08X}, got {result:08X}");
+    }
+
+    #[rstest]
+    #[case(0x0A4C_D995_4342_3234, 0x85E8_1354_0F0A_B405)]
+    fn final_permutation(#[case] input: u64, #[case] output: u64) {
+        let result = fp(input);
+        assert_eq!(
+            result, output,
+            "Final permutation failed. Expected 0x{output:016X}, got 0x{result:016X}"
+        );
+    }
+
+    #[test]
+    fn encrypt_decrypt_roundtrip() {
+        let des = des_instance();
+
+        let ciphertext = des.encrypt(TEST_PLAINTEXT);
+        let dectrypted = des.decrypt(ciphertext);
+        let re_ciphertext = des.encrypt(dectrypted);
+
+        assert_eq!(
+            ciphertext, TEST_CIPHERTEXT,
+            "Encyption failed. Expected 0x{ciphertext:016X}, got 0x{TEST_CIPHERTEXT:016X}"
+        );
+        assert_eq!(
+            dectrypted, TEST_PLAINTEXT,
+            "Decyption failed. Expected 0x{dectrypted:016X}, got 0x{TEST_PLAINTEXT:016X}"
+        );
+        assert_eq!(
+            re_ciphertext, TEST_CIPHERTEXT,
+            "Re-encyption failed. Expected 0x{re_ciphertext:016X}, got 0x{TEST_CIPHERTEXT:016X}"
+        );
     }
 }
