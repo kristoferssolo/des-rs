@@ -1,8 +1,9 @@
 use crate::grammar;
-use unsynn::*;
+use quote::format_ident;
+use unsynn::Ident;
 
 pub struct Struct {
-    pub bit_width: u128,
+    pub bit_width: u8,
     pub error_type: Ident,
     pub name: Ident,
     pub body: Ident,
@@ -10,9 +11,11 @@ pub struct Struct {
 
 impl From<grammar::StructDef> for Struct {
     fn from(value: grammar::StructDef) -> Self {
+        let bit_width = u8::try_from(value.bit_width.bit_width.content.width.content.value())
+            .expect("8-bit value");
         Self {
-            bit_width: value.bit_width.bit_width.content.width.content.value(),
-            error_type: value.error_type.error.content.error.content,
+            bit_width,
+            error_type: format_ident!("{}Error", value.name),
             name: value.name,
             body: value.body.content,
         }

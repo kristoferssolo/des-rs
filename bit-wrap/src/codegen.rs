@@ -1,8 +1,8 @@
 use crate::ast::Struct;
 use quote::quote;
-use unsynn::*;
+use unsynn::{Ident, TokenStream};
 
-#[ignore = "too_many_lines"]
+#[allow(clippy::too_many_lines)]
 pub fn generate_impl(info: &Struct) -> TokenStream {
     let name = &info.name;
     let inner = &info.body;
@@ -10,8 +10,12 @@ pub fn generate_impl(info: &Struct) -> TokenStream {
     let ops = generate_bitwise_ops(info);
     let fmt = generate_bitwise_fmt(info);
     let wrapper = generate_bitwise_wrapper(info);
+    let error = generate_error(info);
+    let conversions = generate_conversions(info);
 
     quote! {
+        #error
+        #conversions
         #ops
         #fmt
         #wrapper
@@ -37,6 +41,91 @@ pub fn generate_impl(info: &Struct) -> TokenStream {
     }
 }
 
+fn generate_conversions(info: &Struct) -> TokenStream {
+    let name = &info.name;
+    let inner = &info.body;
+    let error_type = &info.error_type;
+    let bit_width = info.bit_width;
+
+    // Generate From implementations for smaller integer types (guaranteed safe)
+    let impl_from = |target_width: u8, srouce_type: &TokenStream| {
+        generate_from_impl(bit_width, target_width, srouce_type, name, inner)
+    };
+
+    let from_u8 = impl_from(8, &quote! { u8 });
+    let from_u16 = impl_from(15, &quote! { u16 });
+    let from_u32 = impl_from(32, &quote! { u32 });
+    let from_u64 = impl_from(64, &quote! { u64 });
+
+    let impl_try_from = |target_width: u8, srouce_type: &TokenStream| {
+        generate_try_from_impl(
+            bit_width,
+            target_width,
+            srouce_type,
+            name,
+            inner,
+            error_type,
+        )
+    };
+    let try_from_u8 = impl_try_from(8, &quote! { u8 });
+    let try_from_u16 = impl_try_from(16, &quote! { u16 });
+    let try_from_u32 = impl_try_from(32, &quote! { u32 });
+    let try_from_u64 = impl_try_from(64, &quote! { u64 });
+
+    quote! {
+        #from_u8
+        #from_u16
+        #from_u32
+        #from_u64
+        #try_from_u8
+        #try_from_u16
+        #try_from_u32
+        #try_from_u64
+    }
+}
+
+fn generate_error(info: &Struct) -> TokenStream {
+    let error_type = &info.error_type;
+    let name = &info.name;
+    let inner = &info.body;
+
+    quote! {
+        #[derive(Debug, thiserror::Error)]
+        pub enum #error_type {
+            #[error("#name must be a {width}-bit number (0 to {max}), got {value}")]
+            ValueOutOfRange {
+                value: #inner,
+                max: #inner,
+                width: u8
+            },
+
+            #[error("Hex value 0x{value:X} exceeds {bit_width}-bit limit (masked to 0x{masked:0width$X})")]
+            ExceedsBitLimit {
+                value: u64,
+                bit_width: u8,
+                masked: u64,
+                width: usize,
+            },
+
+            #[error("Failed to parse subkey value: {0}")]
+            ParseError(#[from] std::num::ParseIntError),
+
+            #[error("Unknown error: {0}")]
+            Unknown(String),
+        }
+
+        impl #error_type {
+            pub fn value_out_of_range(value: #inner) -> Self {
+                Self::ValueOutOfRange {
+                    value,
+                    max: #name::MAX,
+                    width: #name::BIT_WIDTH,
+                }
+            }
+        }
+    }
+}
+
 fn generate_bitwise_fmt(info: &Struct) -> TokenStream {
     let name = &info.name;
 
@@ -53,13 +142,13 @@ fn generate_bitwise_fmt(info: &Struct) -> TokenStream {
             }
         }
 
-        impl std::fmt::Debug for Subkey {
+        impl std::fmt::Debug for #name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "Subkey(0x{:012X})", self.0)
+                write!(f, "#name(0x{:012X})", self.0)
             }
         }
 
-        impl std::fmt::Display for Subkey {
+        impl std::fmt::Display for #name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 write!(f, "0x{:012X}", self.0)
             }
@@ -67,16 +156,22 @@ fn generate_bitwise_fmt(info: &Struct) -> TokenStream {
     }
 }
 
+#[allow(clippy::similar_names)]
+#[allow(clippy::too_many_lines)]
 fn generate_bitwise_ops(info: &Struct) -> TokenStream {
     let name = &info.name;
     let inner = &info.body;
     let error_type = &info.error_type;
 
-    let bit_width = u8::try_from(info.bit_width).expect("8-bit value");
+    let bit_width = info.bit_width;
 
     let hex_width = usize::from(bit_width.div_ceil(4));
     let bin_width = usize::from(bit_width);
-    let max_value = (1u64 << (bit_width)) - 1;
+    let max_value = if bit_width == 64 {
+        u64::MAX
+    } else {
+        (1u64 << (bit_width)) - 1
+    };
 
     quote! {
         impl #name {
@@ -316,117 +411,162 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
     }
 }
 
-fn generate_bitwise_wrapper(_info: &Struct) -> TokenStream {
+fn generate_bitwise_wrapper(info: &Struct) -> TokenStream {
+    let name = &info.name;
+
     quote! {
-        impl std::ops::Not for Subkey {
+        impl std::ops::Not for #name {
             type Output = Self;
             fn not(self) -> Self::Output {
                 Self(!self.0)
             }
         }
 
-        impl std::ops::BitAnd for Subkey {
+        impl std::ops::BitAnd for #name {
             type Output = Self;
             fn bitand(self, rhs: Self) -> Self::Output {
                 Self(self.0 & rhs.0)
             }
         }
 
-        impl std::ops::BitAnd<&Self> for Subkey {
+        impl std::ops::BitAnd<&Self> for #name {
             type Output = Self;
             fn bitand(self, rhs: &Self) -> Self::Output {
                 Self(self.0 & rhs.0)
             }
         }
 
-        impl std::ops::BitAndAssign for Subkey {
+        impl std::ops::BitAndAssign for #name {
             fn bitand_assign(&mut self, rhs: Self) {
                 self.0 &= rhs.0;
             }
         }
 
-        impl std::ops::BitAndAssign<&Self> for Subkey {
+        impl std::ops::BitAndAssign<&Self> for #name {
             fn bitand_assign(&mut self, rhs: &Self) {
                 self.0 &= rhs.0;
             }
         }
 
-        impl std::ops::BitOr for Subkey {
+        impl std::ops::BitOr for #name {
             type Output = Self;
             fn bitor(self, rhs: Self) -> Self::Output {
                 Self(self.0 | rhs.0)
             }
         }
 
-        impl std::ops::BitOr<&Self> for Subkey {
+        impl std::ops::BitOr<&Self> for #name {
             type Output = Self;
             fn bitor(self, rhs: &Self) -> Self::Output {
                 Self(self.0 | rhs.0)
             }
         }
 
-        impl std::ops::BitOrAssign for Subkey {
+        impl std::ops::BitOrAssign for #name {
             fn bitor_assign(&mut self, rhs: Self) {
                 self.0 |= rhs.0;
             }
         }
 
-        impl std::ops::BitOrAssign<&Self> for Subkey {
+        impl std::ops::BitOrAssign<&Self> for #name {
             fn bitor_assign(&mut self, rhs: &Self) {
                 self.0 |= rhs.0;
             }
         }
 
-        impl std::ops::BitXor for Subkey {
+        impl std::ops::BitXor for #name {
             type Output = Self;
             fn bitxor(self, rhs: Self) -> Self {
                 Self(self.0 ^ rhs.0)
             }
         }
 
-        impl std::ops::BitXor<&Self> for Subkey {
+        impl std::ops::BitXor<&Self> for #name {
             type Output = Self;
             fn bitxor(self, rhs: &Self) -> Self {
                 Self(self.0 ^ rhs.0)
             }
         }
 
-        impl std::ops::BitXorAssign for Subkey {
+        impl std::ops::BitXorAssign for #name {
             fn bitxor_assign(&mut self, rhs: Self) {
                 self.0 ^= rhs.0;
             }
         }
 
-        impl std::ops::BitXorAssign<&Self> for Subkey {
+        impl std::ops::BitXorAssign<&Self> for #name {
             fn bitxor_assign(&mut self, rhs: &Self) {
                 self.0 ^= rhs.0;
             }
         }
 
-        impl std::ops::Shl<u32> for Subkey {
+        impl std::ops::Shl<u32> for #name {
             type Output = Self;
             fn shl(self, rhs: u32) -> Self {
                 Self(self.0 << rhs)
             }
         }
 
-        impl std::ops::ShlAssign<u32> for Subkey {
+        impl std::ops::ShlAssign<u32> for #name {
             fn shl_assign(&mut self, rhs: u32) {
                 self.0 <<= rhs;
             }
         }
 
-        impl std::ops::Shr<u32> for Subkey {
+        impl std::ops::Shr<u32> for #name {
             type Output = Self;
             fn shr(self, rhs: u32) -> Self::Output {
                 Self(self.0 >> rhs)
             }
         }
 
-        impl std::ops::ShrAssign<u32> for Subkey {
+        impl std::ops::ShrAssign<u32> for #name {
             fn shr_assign(&mut self, rhs: u32) {
                 self.0 >>= rhs;
             }
         }
     }
+}
+
+fn generate_from_impl(
+    bit_width: u8,
+    target_width: u8,
+    source_type: &TokenStream,
+    target_type: &Ident,
+    inner_type: &Ident,
+) -> Option<TokenStream> {
+    if bit_width < target_width {
+        return None;
+    }
+    Some(quote! {
+        impl std::convert::From<#source_type> for #target_type {
+            fn from(key: #source_type) -> Self {
+                Self(key as #inner_type)
+            }
+        }
+    })
+}
+
+fn generate_try_from_impl(
+    bit_width: u8,
+    target_width: u8,
+    source_type: &TokenStream,
+    target_type: &Ident,
+    inner_type: &Ident,
+    error_type: &Ident,
+) -> Option<TokenStream> {
+    if bit_width >= target_width {
+        return None;
+    }
+    Some(quote! {
+        impl std::convert::TryFrom<#source_type> for #target_type {
+            type Error = #error_type;
+            fn try_from(key: #source_type) -> Result<Self, Self::Error> {
+                if key > #target_type::MAX {
+                    return Err(#error_type::value_out_of_range(key));
+                }
+                Ok(Self(key as #inner_type))
+            }
+        }
+    })
 }
