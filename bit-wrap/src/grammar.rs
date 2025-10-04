@@ -4,12 +4,13 @@ keyword! {
     pub KwStruct = "struct";
     pub KwPub = "pub";
     pub KwBitWidth = "bit_width";
+    pub KwError = "bit_conversion_error";
 }
 
 unsynn! {
-    pub struct BitWidth{
+    pub struct BitWidth {
         pub kw_bit_width: KwBitWidth,
-        pub bit_width: ParenthesisGroupContaining<LiteralInteger>,
+        pub width: ParenthesisGroupContaining<LiteralInteger>,
     }
 
     pub struct Attribute {
@@ -17,8 +18,19 @@ unsynn! {
         pub bit_width: BracketGroupContaining<BitWidth>,
     }
 
+    pub struct ErrorType {
+        pub kw_bit_width: KwError,
+        pub error: ParenthesisGroupContaining<Ident>,
+    }
+
+    pub struct AttributeError {
+        pub pound: Pound,
+        pub error: BracketGroupContaining<ErrorType>,
+    }
+
     pub struct StructDef {
-        pub attr: Attribute,
+        pub bit_width: Attribute,
+        pub error_type: AttributeError,
         pub vis: Option<KwPub>,
         pub kw_struct: KwStruct,
         pub name: Ident,
@@ -33,6 +45,7 @@ mod tests {
 
     const SAMPLE: &str = r#"
         #[bit_width(48)]
+        #[bit_conversion_error()]
         pub struct Subkey(u64);
     "#;
 

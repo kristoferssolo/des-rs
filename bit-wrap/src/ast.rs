@@ -2,33 +2,17 @@ use crate::grammar;
 use unsynn::*;
 
 pub struct Struct {
-    pub attr: Attribute,
+    pub bit_width: u128,
+    pub error_type: Ident,
     pub name: Ident,
     pub body: Ident,
-}
-
-impl Struct {
-    pub fn bit_width(&self) -> u128 {
-        self.attr.bit_width
-    }
-}
-
-pub struct Attribute {
-    pub bit_width: u128,
-}
-
-impl From<grammar::Attribute> for Attribute {
-    fn from(value: grammar::Attribute) -> Self {
-        Self {
-            bit_width: value.bit_width.content.bit_width.content.value(),
-        }
-    }
 }
 
 impl From<grammar::StructDef> for Struct {
     fn from(value: grammar::StructDef) -> Self {
         Self {
-            attr: value.attr.into(),
+            bit_width: value.bit_width.bit_width.content.width.content.value(),
+            error_type: value.error_type.error.content.error.content,
             name: value.name,
             body: value.body.content,
         }

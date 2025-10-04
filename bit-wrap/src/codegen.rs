@@ -70,8 +70,9 @@ fn generate_bitwise_fmt(info: &Struct) -> TokenStream {
 fn generate_bitwise_ops(info: &Struct) -> TokenStream {
     let name = &info.name;
     let inner = &info.body;
+    let error_type = &info.error_type;
 
-    let bit_width = u8::try_from(info.bit_width()).expect("8-bit value");
+    let bit_width = u8::try_from(info.bit_width).expect("8-bit value");
 
     let hex_width = usize::from(bit_width.div_ceil(4));
     let bin_width = usize::from(bit_width);
@@ -91,7 +92,7 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
             /// Create a new [`Self`] from a key value
             #[inline]
             #[macro_use]
-            pub fn new(key: #inner) -> Result<Self, String> {
+            pub fn new(key: #inner) -> Result<Self, #error_type> {
                 key.try_into()
             }
 
@@ -263,17 +264,17 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
             }
 
             /// Create from a hex string with bit width validation
-            pub fn from_hex(hex: &str) -> Result<Self, String> {
-                let value = #inner::from_str_radix(hex, 16).map_err(|e| format!("Invalid hex string: {e}"))?;
+            pub fn from_hex(hex: &str) -> Result<Self, #error_type> {
+                let value = #inner::from_str_radix(hex, 16)?;
 
                 let masked = value & Self::MAX;
                 if value != masked {
-                    return Err(
-                        format!(
-                            "Hex value 0x{value:X} exceeds {}-bit limit (masked to 0x{masked:0width$X})",
-                            Self::BIT_WIDTH, width = #hex_width
-                        )
-                    )
+                    return Err(#error_type::ExceedsBitLimit {
+                        value,
+                        bit_width: Self::BIT_WIDTH,
+                        masked,
+                        width: #hex_width
+                    })
                 }
 
                 Ok(Self(value))
