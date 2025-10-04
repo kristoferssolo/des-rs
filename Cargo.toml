@@ -1,17 +1,13 @@
-[package]
-name = "des"
-version = "0.1.0"
-authors = ["Kristofers Solo <dev@kristofers.xyz>"]
-edition = "2024"
+[workspace]
+resolver = "2"
+members = ["des-lib"]
 
-[dependencies]
-
-[dev-dependencies]
+[workspace.dependencies]
 claims = "0.8"
 rand = "0.9"
 rstest = "0.26"
 
-[lints.clippy]
+[workspace.lints.clippy]
 pedantic = "warn"
 nursery = "warn"
 unwrap_used = "warn"
