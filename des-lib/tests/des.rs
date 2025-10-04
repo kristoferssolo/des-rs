@@ -1,6 +1,5 @@
+use des_lib::Des;
 use rstest::rstest;
-
-use des::Des;
 
 const TEST_KEY: u64 = 0x1334_5779_9BBC_DFF1;
 const TEST_PLAINTEXT: u64 = 0x0123_4567_89AB_CDEF;

@@ -1,6 +1,6 @@
 mod constants;
 
-use crate::constants::{E_BOX, FP, IP, PC1_TABLE, PC2_TABLE, P_BOX, ROUND_ROTATIONS, S_BOXES};
+use crate::constants::{E_BOX, FP, IP, P_BOX, PC1_TABLE, PC2_TABLE, ROUND_ROTATIONS, S_BOXES};
 
 #[derive(Debug)]
 pub struct Des {
