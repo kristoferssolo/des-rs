@@ -1,0 +1,17 @@
+[package]
+name = "des-lib"
+version = "0.1.0"
+authors = ["Kristofers Solo <dev@kristofers.xyz>"]
+edition = "2024"
+
+[dependencies]
+bit-wrap.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+claims.workspace = true
+rand.workspace = true
+rstest.workspace = true
+
+[lints]
+workspace = true

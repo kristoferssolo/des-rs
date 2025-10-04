@@ -1,6 +1,10 @@
+mod blocks;
 mod constants;
+mod error;
+mod keys;
 
-use crate::constants::{E_BOX, FP, IP, PC1_TABLE, PC2_TABLE, P_BOX, ROUND_ROTATIONS, S_BOXES};
+use crate::constants::{E_BOX, FP, IP, P_BOX, PC1_TABLE, PC2_TABLE, ROUND_ROTATIONS, S_BOXES};
+pub use keys::{Key, Subkey};
 
 #[derive(Debug)]
 pub struct Des {
