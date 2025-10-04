@@ -7,11 +7,11 @@ pub fn generate_impl(info: &Struct) -> TokenStream {
     let name = &info.name;
     let inner = &info.body;
 
+    let error = generate_error(info);
+    let conversions = generate_conversions(info);
     let ops = generate_bitwise_ops(info);
     let fmt = generate_bitwise_fmt(info);
     let wrapper = generate_bitwise_wrapper(info);
-    let error = generate_error(info);
-    let conversions = generate_conversions(info);
 
     quote! {
         #error
@@ -85,8 +85,8 @@ fn generate_conversions(info: &Struct) -> TokenStream {
 }
 
 fn generate_error(info: &Struct) -> TokenStream {
-    let error_type = &info.error_type;
     let name = &info.name;
+    let error_type = &info.error_type;
     let inner = &info.body;
 
     quote! {
@@ -97,14 +97,6 @@ fn generate_error(info: &Struct) -> TokenStream {
                 value: #inner,
                 max: #inner,
                 width: u8
-            },
-
-            #[error("Hex value 0x{value:X} exceeds {bit_width}-bit limit (masked to 0x{masked:0width$X})")]
-            ExceedsBitLimit {
-                value: u64,
-                bit_width: u8,
-                masked: u64,
-                width: usize,
             },
 
             #[error("Failed to parse subkey value: {0}")]
@@ -164,6 +156,12 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
     let error_type = &info.error_type;
 
     let bit_width = info.bit_width;
+    let inner_type_width = match inner.to_string().as_str() {
+        "u8" => 8,
+        "u16" => 16,
+        "u32" => 32,
+        _ => 64,
+    };
 
     let hex_width = usize::from(bit_width.div_ceil(4));
     let bin_width = usize::from(bit_width);
@@ -171,6 +169,26 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
         u64::MAX
     } else {
         (1u64 << (bit_width)) - 1
+    };
+
+    let new_method = if bit_width == inner_type_width {
+        quote! {
+            /// Create a new [`Self`] from a key value
+            #[inline]
+            #[macro_use]
+            pub fn new(key: #inner) -> Self {
+                key.into()
+            }
+        }
+    } else {
+        quote! {
+            /// Create a new [`Self`] from a key value
+            #[inline]
+            #[macro_use]
+            pub fn new(key: #inner) -> Result<Self, #error_type> {
+                key.try_into()
+            }
+        }
     };
 
     quote! {
@@ -184,12 +202,7 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
             /// Maximum value for this bit width
             pub const MAX: #inner = #max_value;
 
-            /// Create a new [`Self`] from a key value
-            #[inline]
-            #[macro_use]
-            pub fn new(key: #inner) -> Result<Self, #error_type> {
-                key.try_into()
-            }
+            #new_method
 
             /// Convert to hex string (formatted for the bit width)
             #[macro_use]
@@ -364,12 +377,7 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
 
                 let masked = value & Self::MAX;
                 if value != masked {
-                    return Err(#error_type::ExceedsBitLimit {
-                        value,
-                        bit_width: Self::BIT_WIDTH,
-                        masked,
-                        width: #hex_width
-                    })
+                    return Err(#error_type::value_out_of_range(value));
                 }
 
                 Ok(Self(value))
