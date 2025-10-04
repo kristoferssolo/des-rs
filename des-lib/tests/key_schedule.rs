@@ -1,4 +1,4 @@
-use des::Des;
+use des_lib::Des;
 
 // Full expected subkeys for TEST_KEY (48 bits each, from FIPS spec)
 const EXPECTED_SUBKEYS: [u64; 16] = [

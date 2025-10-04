@@ -1,5 +1,2 @@
-mod key;
-mod subkey;
-
-pub use key::Key;
-pub use subkey::Subkey;
+pub mod key;
+pub mod subkey;

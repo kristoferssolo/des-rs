@@ -1,39 +1,43 @@
-mod blocks;
-mod constants;
-mod error;
-mod keys;
+pub mod blocks;
+pub mod constants;
+pub mod error;
+pub mod keys;
 
-use crate::constants::{E_BOX, FP, IP, P_BOX, PC1_TABLE, PC2_TABLE, ROUND_ROTATIONS, S_BOXES};
-pub use keys::{Key, Subkey};
+use crate::{
+    blocks::Block,
+    constants::{E_BOX, FP, IP, P_BOX, PC1_TABLE, PC2_TABLE, ROUND_ROTATIONS, S_BOXES},
+    error::DesError,
+    keys::{key::Key, subkey::Subkey},
+};
 
 #[derive(Debug)]
 pub struct Des {
-    pub subkeys: [u64; 16],
+    pub subkeys: [Subkey; 16],
 }
 
 impl Des {
     /// Create a new DES instance from a 64-bit key (8 bytes).
     #[must_use]
-    pub fn new(key: u64) -> Self {
-        let subkeys = generate_subkeys(key);
+    pub fn new(key: impl Into<Key>) -> Self {
+        let subkeys = generate_subkeys(key.into());
         Self { subkeys }
     }
 
     /// Encrypt a 64-bit block.
     #[must_use]
-    pub fn encrypt(&self, block: u64) -> u64 {
-        self.des(block, true)
+    pub fn encrypt(&self, block: impl Into<Block>) -> u64 {
+        self.des(block.into(), true)
     }
 
     /// Decrypt a 64-bit block.
     #[must_use]
-    pub fn decrypt(&self, block: u64) -> u64 {
-        self.des(block, false)
+    pub fn decrypt(&self, block: impl Into<Block>) -> u64 {
+        self.des(block.into(), false)
     }
 
     /// Core DES function: encrypt if forward=true, else decrypt.
     #[must_use]
-    fn des(&self, block: u64, forward: bool) -> u64 {
+    fn des(&self, block: Block, forward: bool) -> u64 {
         let permutated_block = ip(block);
 
         let (left, right) = if forward {
@@ -54,16 +58,18 @@ impl Des {
 /// Accounts for DES specification's big-endian bit numbering (1-64, MSB first)
 /// versus Rust u64's little-endian bit numbering (0-63, LSB first).
 #[must_use]
-pub fn pc1(key: u64) -> u64 {
-    permutate(key, 64, 56, &PC1_TABLE)
+pub fn pc1(key: impl Into<Key>) -> u64 {
+    permutate(key.into(), 64, 56, &PC1_TABLE)
 }
 
 /// Compression permuation
 /// Reduces 56-bits to 48-bit key
 #[must_use]
-pub fn pc2(key: u64) -> u64 {
+pub fn pc2(key: u64) -> Result<Subkey, DesError> {
     let key_56 = key & 0x00FF_FFFF_FFFF_FFFF;
     permutate(key_56, 56, 48, &PC2_TABLE)
+        .try_into()
+        .map_err(DesError::from)
 }
 
 #[must_use]
@@ -108,7 +114,7 @@ fn concatenate_halves(left: u32, right: u32, bit_offset: u8) -> u64 {
 }
 
 /// Generate 16 subkeys from the 64-bit key.
-fn generate_subkeys(key: u64) -> [u64; 16] {
+fn generate_subkeys(key: Key) -> [Subkey; 16] {
     let reduced_key = pc1(key); // C_0, D_0
     let (mut left, mut right) = split_block(reduced_key);
 
@@ -120,7 +126,8 @@ fn generate_subkeys(key: u64) -> [u64; 16] {
             let combined = concatenate_halves(left, right, 28);
             pc2(combined)
         })
-        .collect::<Vec<_>>()
+        .collect::<Result<Vec<_>, DesError>>()
+        .expect("no errors")
         .try_into()
         .expect("Exactly 16 subkeys expected")
 }
@@ -133,7 +140,13 @@ fn generate_subkeys(key: u64) -> [u64; 16] {
 /// - `output_bits` - Number of bits in the output (1-64)
 /// - `position_table` - 1-based positions (1 to `input_bits`) where each output bit comes from
 #[must_use]
-fn permutate(input: u64, input_bits: u32, output_bits: u32, position_table: &[u8]) -> u64 {
+fn permutate(
+    input: impl Into<u64>,
+    input_bits: u32,
+    output_bits: u32,
+    position_table: &[u8],
+) -> u64 {
+    let input = input.into();
     position_table
         .iter()
         .enumerate()
@@ -159,8 +172,8 @@ fn permutate(input: u64, input_bits: u32, output_bits: u32, position_table: &[u8
 
 #[inline]
 #[must_use]
-fn ip(message: u64) -> u64 {
-    permutate(message, 64, 64, &IP)
+fn ip(message: impl Into<Block>) -> u64 {
+    permutate(message.into(), 64, 64, &IP)
 }
 
 /// Expand the right side of the data from 32 bits to 48.
@@ -202,7 +215,7 @@ pub fn fp(block: u64) -> u64 {
 
 /// Process 16 Feistel rounds for ECB encryption/decryption.
 #[must_use]
-fn process_feistel_rounds(initial_block: u64, subkeys: &[u64]) -> (u32, u32) {
+fn process_feistel_rounds(initial_block: u64, subkeys: &[Subkey]) -> (u32, u32) {
     let (mut left, mut right) = split_block(initial_block);
     for &subkey in subkeys {
         (left, right) = feistel(left, right, subkey);
@@ -213,7 +226,7 @@ fn process_feistel_rounds(initial_block: u64, subkeys: &[u64]) -> (u32, u32) {
 /// Feistel function: Expand, XOR with subkey, S-box, permute.
 /// `R_i` = `L_(i-1)` XOR f(`R_(i-1)`, `K_1`)
 #[must_use]
-fn feistel(left: u32, right: u32, subkey: u64) -> (u32, u32) {
+fn feistel(left: u32, right: u32, subkey: Subkey) -> (u32, u32) {
     let function_output = f_function(right, subkey);
     let new_right = left ^ function_output;
     // L_i = R_(i-1)
@@ -222,9 +235,9 @@ fn feistel(left: u32, right: u32, subkey: u64) -> (u32, u32) {
 }
 
 #[must_use]
-fn f_function(right: u32, subkey: u64) -> u32 {
+fn f_function(right: u32, subkey: Subkey) -> u32 {
     let expanded = expansion_permutation(right);
-    let xored = expanded ^ subkey;
+    let xored = expanded ^ subkey.as_ref();
     let sboxed = s_box_substitution(xored);
     p_box_permutation(sboxed)
 }
@@ -232,7 +245,7 @@ fn f_function(right: u32, subkey: u64) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use claims::assert_ge;
+    use claims::{assert_ge, assert_ok};
     use rstest::rstest;
 
     const TEST_KEY: u64 = 0x1334_5779_9BBC_DFF1;
@@ -287,14 +300,9 @@ mod tests {
     #[case(0x00F8_6655_7AAB_33C7, 0xBF91_8D3D_3F0A)] // K_15
     #[case(0x00F0_CCAA_F556_678F, 0xCB3D_8B0E_17F5)] // K_16
     fn pc2_permutaion_correct(#[case] before: u64, #[case] after: u64) {
-        let result = pc2(before);
+        let result = assert_ok!(pc2(before));
 
-        assert_eq!(result, after, "PC2 permutation failed");
-        assert_ge!(
-            result.leading_zeros(),
-            16,
-            "PC2 result should have leading 16 bits as 0"
-        );
+        assert_eq!(*result.as_ref(), after, "PC2 permutation failed");
     }
 
     #[test]

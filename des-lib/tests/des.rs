@@ -1,6 +1,5 @@
+use des_lib::Des;
 use rstest::rstest;
-
-use des::Des;
 
 const TEST_KEY: u64 = 0x1334_5779_9BBC_DFF1;
 const TEST_PLAINTEXT: u64 = 0x0123_4567_89AB_CDEF;
@@ -14,9 +13,9 @@ fn des_instance() -> Des {
 #[test]
 fn test_ecb_mode_equivalence() {
     // If you implement ECB mode, test it matches single block
-    let key = 0x1334_5779_9BBC_DFF1;
+    let key = 0x1334_5779_9BBC_DFF1u64;
     let des = Des::new(key);
-    let plain = 0x0123_4567_89AB_CDEF;
+    let plain = 0x0123_4567_89AB_CDEFu64;
 
     let _single_block = des.encrypt(plain);
     // let ecb_result = encrypt_ecb(&[plain]);
@@ -52,7 +51,11 @@ fn encrypt_decrypt_roundtrip(
 
 #[test]
 fn weak_keys_rejected() {
-    let weak_keys = [0x0101010101010101, 0xFEFEFEFEFEFEFEFE, 0xE001E001E001E001];
+    let weak_keys = [
+        0x0101010101010101u64,
+        0xFEFEFEFEFEFEFEFE,
+        0xE001E001E001E001,
+    ];
 
     for key in weak_keys {
         let des = Des::new(key);
@@ -90,8 +93,8 @@ fn all_one_paintext() {
 fn different_inputs() {
     let des = des_instance();
 
-    let plain1 = 1;
-    let plain2 = 2;
+    let plain1 = 1u64;
+    let plain2 = 2u64;
     let enc1 = des.encrypt(plain1);
     let enc2 = des.encrypt(plain2);
     assert_ne!(

@@ -175,7 +175,7 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
         quote! {
             /// Create a new [`Self`] from a key value
             #[inline]
-            #[macro_use]
+            #[must_use]
             pub fn new(key: #inner) -> Self {
                 key.into()
             }
@@ -184,7 +184,7 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
         quote! {
             /// Create a new [`Self`] from a key value
             #[inline]
-            #[macro_use]
+            #[must_use]
             pub fn new(key: #inner) -> Result<Self, #error_type> {
                 key.try_into()
             }
@@ -205,14 +205,14 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
             #new_method
 
             /// Convert to hex string (formatted for the bit width)
-            #[macro_use]
+            #[must_use]
             pub fn to_hex(self) -> String {
                 let value = self.0 & Self::MAX;
                 format!("{:0width$X}", value, width = #hex_width)
             }
 
             /// Convert to binary string (full bit width with leading zeros)
-            #[macro_use]
+            #[must_use]
             pub fn to_bin(self) -> String {
                 let value = self.0 & Self::MAX;
                 format!("{:0width$b}", value, width = #bin_width)
@@ -220,27 +220,27 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
 
             /// Check if all bits are set
             #[inline]
-            #[macro_use]
+            #[must_use]
             pub const fn all(self) -> bool {
                 self.0 == Self::MAX
             }
 
             /// Check if any bit is set
             #[inline]
-            #[macro_use]
+            #[must_use]
             pub const fn any(self) -> bool {
                 self.0 != 0
             }
 
             /// Count the number of set bits
             #[inline]
-            #[macro_use]
+            #[must_use]
             pub const fn count_ones(self) -> u32 {
                 self.0.count_ones()
             }
 
             /// Count the number of zero bits within the constrained bit width
-            #[macro_use]
+            #[must_use]
             pub const fn count_zeros(self) -> u32 {
                 let value = self.0 as #inner & Self::MAX;
                 let ones_count = self.count_ones();
@@ -248,7 +248,7 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
             }
 
             /// Reverse the bit pattern within the constrained bit width
-            #[macro_use]
+            #[must_use]
             pub const fn reverse_bits(self) -> Self {
                 let value = self.0 as #inner & Self::MAX;
                 let reversed = value.reverse_bits();
@@ -260,7 +260,7 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
 
 
             /// Rotate the bits left by `n` positions within the bit width
-            #[macro_use]
+            #[must_use]
             pub const fn rotate_left(self, n: u8) -> Self {
                 let n = n % Self::BIT_WIDTH;
                 if n == 0 {
@@ -274,7 +274,7 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
             }
 
             /// Rotate the bits right by `n` positions within the bit width
-            #[macro_use]
+            #[must_use]
             pub const fn rotate_right(self, n: u8) -> Self {
                 let n = n % Self::BIT_WIDTH;
                 if n == 0 {
@@ -288,7 +288,7 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
             }
 
             /// Find the number of leading zero bits within the bit width
-            #[macro_use]
+            #[must_use]
             pub fn leading_zeros(self) -> u32 {
                 let value = self.0 as #inner & Self::MAX;
                 let bit_width = Self::BIT_WIDTH as u32;
@@ -301,7 +301,7 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
             }
 
             /// Find the number of trailing zero bits within the bit width
-            #[macro_use]
+            #[must_use]
             pub fn trailing_zeros(self) -> u32 {
                 let value = self.0 as #inner & Self::MAX;
                 let reversed = self.reverse_bits();
@@ -309,7 +309,7 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
             }
 
             /// Find the number of leading one bits from the MSB within the bit width
-            #[macro_use]
+            #[must_use]
             pub fn leading_ones(self) -> u32 {
                 let value = self.0 as #inner & Self::MAX;
                 let not_value = !value & Self::MAX;
@@ -323,7 +323,7 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
             }
 
             /// Find the number of trailing one bits from the LSB within the bit width
-            #[macro_use]
+            #[must_use]
             pub fn trailing_ones(self) -> u32 {
                 let value = self.0 as #inner & Self::MAX;
                 let reversed = self.reverse_bits();
@@ -331,13 +331,13 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
             }
 
             /// Check if the value is zero within the bit width
-            #[macro_use]
+            #[must_use]
             pub const fn is_zero(self) -> bool {
                 (self.0 & Self::MAX)  == 0
             }
 
             /// Set a specific bit to 1 (clamped to bit width)
-            #[macro_use]
+            #[must_use]
             pub const fn bit_is_set(self, bit: u8) -> bool {
                 let clamped = self.clamp_bit_positions(bit);
                 let mask = 1<< clamped;
@@ -364,7 +364,7 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
             }
 
             /// Check if bits in the given mask are set (within bit width)
-            #[macro_use]
+            #[must_use]
             pub const fn contains_mask(self, mask: Self) -> bool {
                 let self_value = self.0 & Self::MAX;
                 let mask_value = mask.0 & Self::MAX;
@@ -384,7 +384,7 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
             }
 
             /// Extract a bitfield from the constrained range
-            #[macro_use]
+            #[must_use]
             pub const fn bitfield(self, low: u8, high: u8) -> u64 {
                 let low = self.clamp_bit_positions(low);
                 let high = self.clamp_bit_positions(high);
@@ -408,7 +408,7 @@ fn generate_bitwise_ops(info: &Struct) -> TokenStream {
                 self.0 = (self.0 & !mask) | ((value << low) & mask);
             }
 
-            #[macro_use]
+            #[must_use]
             const fn clamp_bit_positions(self, bit: u8) -> u8 {
                 if bit >= Self::BIT_WIDTH {
                     return Self::BIT_WIDTH - 1;
