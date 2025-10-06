@@ -10,18 +10,6 @@ fn des_instance() -> Des {
     Des::new(TEST_KEY)
 }
 
-#[test]
-fn test_ecb_mode_equivalence() {
-    // If you implement ECB mode, test it matches single block
-    let key = 0x1334_5779_9BBC_DFF1;
-    let des = Des::new(key);
-    let plain = 0x0123_4567_89AB_CDEF;
-
-    let _single_block = des.encrypt(plain);
-    // let ecb_result = encrypt_ecb(&[plain]);
-    // assert_eq!(single_block, ecb_result[0]);
-}
-
 #[rstest]
 #[case(TEST_PLAINTEXT, TEST_CIPHERTEXT, TEST_KEY)]
 fn encrypt_decrypt_roundtrip(

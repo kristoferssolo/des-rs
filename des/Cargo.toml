@@ -1,0 +1,15 @@
+[package]
+name = "des"
+version = "0.1.0"
+authors = ["Kristofers Solo <dev@kristofers.xyz>"]
+edition = "2024"
+
+[dependencies]
+clap.workspace = true
+des-lib.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+
+[lints]
+workspace = true

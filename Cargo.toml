@@ -1,11 +1,15 @@
 [workspace]
 resolver = "2"
-members = ["des-lib"]
+members = ["des", "des-lib"]
 
 [workspace.dependencies]
+des-lib = { path = "des-lib" }
+
 claims = "0.8"
+clap = { version = "4.5", features = ["derive"] }
 rand = "0.9"
 rstest = "0.26"
+thiserror = "2"
 
 [workspace.lints.clippy]
 pedantic = "warn"
