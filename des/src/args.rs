@@ -81,7 +81,7 @@ pub struct Value(u64);
 impl Value {
     #[inline]
     #[must_use]
-    pub fn as_64(self) -> u64 {
+    pub const fn as_64(self) -> u64 {
         self.0
     }
 }

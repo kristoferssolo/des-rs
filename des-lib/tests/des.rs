@@ -12,12 +12,19 @@ fn des_instance() -> Des {
 
 #[rstest]
 #[case(TEST_PLAINTEXT, TEST_CIPHERTEXT, TEST_KEY)]
+#[case(0, 0x948A_43F9_8A83_4F7E, TEST_KEY)]
+#[case(1, 0x5D59_D446_0749_5A7A, TEST_KEY)]
+#[case(2, 0x751C_4742_B59E_8BBC, TEST_KEY)]
+#[case(10, 0x088C_B289_A93D_9057, TEST_KEY)]
+#[case(100, 0x561B_A6CF_212E_AFE4, TEST_KEY)]
+#[case(1000, 0x4128_8ECA_58D1_9FDC, TEST_KEY)]
 fn encrypt_decrypt_roundtrip(
     #[case] plaintext: u64,
     #[case] expected_ciphertext: u64,
     #[case] key: u64,
 ) {
     let des = Des::new(key);
+    println!("{plaintext:08b}");
 
     let ciphertext = des.encrypt(plaintext);
     let dectrypted = des.decrypt(ciphertext);
@@ -25,15 +32,15 @@ fn encrypt_decrypt_roundtrip(
 
     assert_eq!(
         ciphertext, expected_ciphertext,
-        "Encyption failed. Expected 0x{ciphertext:016X}, got 0x{expected_ciphertext:016X}"
+        "Encyption failed. Expected 0x{expected_ciphertext:016X}, got 0x{ciphertext:016X}"
     );
     assert_eq!(
         dectrypted, plaintext,
-        "Decyption failed. Expected 0x{dectrypted:016X}, got 0x{plaintext:016X}"
+        "Decyption failed. Expected 0x{plaintext:016X}, got 0x{dectrypted:016X}"
     );
     assert_eq!(
         re_ciphertext, expected_ciphertext,
-        "Re-encyption failed. Expected 0x{re_ciphertext:016X}, got 0x{expected_ciphertext:016X}"
+        "Re-encyption failed. Expected 0x{expected_ciphertext:016X}, got 0x{re_ciphertext:016X}"
     );
 }
 
